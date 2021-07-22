@@ -1,0 +1,36 @@
+<idea-plugin>
+  <id>com.gudong.2021721</id>
+  <name>i18n_plugin</name>
+  <version>1.0</version>
+  <vendor email="291373489@qq.com" url="http://www.gudong.com">gudong</vendor>
+
+  <description><![CDATA[
+      i18n<br>
+    ]]></description>
+
+  <change-notes><![CDATA[
+      Add change notes here.<br>
+      <em>most HTML tags may be used</em>
+    ]]>
+  </change-notes>
+
+  <!-- please see https://www.jetbrains.org/intellij/sdk/docs/basics/getting_started/build_number_ranges.html for description -->
+  <idea-version since-build="173.0"/>
+
+  <!-- please see https://www.jetbrains.org/intellij/sdk/docs/basics/getting_started/plugin_compatibility.html
+       on how to target different products -->
+  <depends>com.intellij.modules.platform</depends>
+
+  <extensions defaultExtensionNs="com.intellij">
+    <!-- Add your extensions here -->
+  </extensions>
+
+  <actions>
+    <!-- Add your actions here -->
+    <action id="I18NAcitionGroup" class="com.gudong.action.I18NAcition" text="I18N_file..." description="com.gudong.action.I18NAcition">
+      <keyboard-shortcut keymap="$default" first-keystroke="shift ctrl Q"/>
+      <add-to-group group-id="RunContextGroupInner" anchor="first"/>
+    </action>
+  </actions>
+
+</idea-plugin>
