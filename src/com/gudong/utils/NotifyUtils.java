@@ -24,7 +24,7 @@ public class NotifyUtils {
     }
 
     private static void notify(String msg, Project project, NotificationType type) {
-        Notification nodt = new Notification("gid", "Translate Properties", msg, type);
+        Notification nodt = new Notification("gid", "Translate plugin", msg, type);
         nodt.notify(project);
     }
 }

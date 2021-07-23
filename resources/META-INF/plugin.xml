@@ -5,12 +5,24 @@
   <vendor email="291373489@qq.com" url="http://www.gudong.com">gudong</vendor>
 
   <description><![CDATA[
-      i18n<br>
+       simple automatic translate plugin, bug duo duo. <em>xi xi</em><br>
+       <h1>
+        <a id="i18n_plugin" class="anchor" href="https://github.com/soulwee/i18n_plugin"></a>
+        translate-properties-idea
+      </h1>
+      <p>Automatic translation of international resource files,Usage example:</p>
+      <p><img src="https://github.com/soulwee/i18n_plugin/blob/master/images/usage.gif?raw=true" alt="使用截图"></p>
+
+      <h3>File may not be translated,Need to pay attention to<h3>
+        1. Must be based on Chinese.<br>
+        2. The last character is a brace.<br>
+        3. Remember to save the file to ensure that it is the latest
     ]]></description>
 
   <change-notes><![CDATA[
-      Add change notes here.<br>
-      <em>most HTML tags may be used</em>
+   i18n translate plugin only for myself<br>
+    it's too hard to make it perfect. <br>
+    maybe sometimes i'll change it,make it better. <br>
     ]]>
   </change-notes>
 

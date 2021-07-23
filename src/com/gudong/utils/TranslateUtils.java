@@ -3,6 +3,7 @@ package com.gudong.utils;
 import com.gudong.dto.I18nResource;
 import com.gudong.enums.I18nLocalEnum;
 import com.gudong.exception.TranslateException;
+import com.intellij.openapi.project.Project;
 import org.apache.commons.lang.StringUtils;
 import org.codehaus.jettison.json.JSONArray;
 
@@ -24,6 +25,7 @@ import java.util.Timer;
 import java.util.TimerTask;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 
 /**
@@ -33,23 +35,8 @@ import java.util.stream.Collectors;
  * @date 2021-07-21 14:51
  */
 public class TranslateUtils {
-    private static AtomicBoolean stopGoogleTranslate = new AtomicBoolean(false);
-    private static Long period = 5 * 60 * 1000L;// 5分钟后再重试
-    private static Timer changeStopGoogleTranslateTimer = null;
 
-    private static void startTimer() {
-        if (changeStopGoogleTranslateTimer == null) {
-            changeStopGoogleTranslateTimer = new Timer();
-            changeStopGoogleTranslateTimer.schedule(new TimerTask() {
-                @Override
-                public void run() {
-                    stopGoogleTranslate.set(false);
-                    changeStopGoogleTranslateTimer.cancel();
-                    changeStopGoogleTranslateTimer = null;
-                }
-            }, period);
-        }
-    }
+    public static Project project;
 
     /**
      * 翻译国际化资源文件
@@ -96,11 +83,14 @@ public class TranslateUtils {
         for (Map.Entry<String, String> o : res.get(I18nLocalEnum.ZH_CN).getProps().entrySet()) {
             allI18nKeys.put(o.getKey(), o.getValue());
         }
-
-        final CountDownLatch countDownLatch = new CountDownLatch(I18nLocalEnum.values().length);
-
+        final CountDownLatch countDownLatch = new CountDownLatch(I18nLocalEnum.values().length - 1);
+        AtomicReference<String> errMsg = new AtomicReference<>("");
         final AtomicBoolean allHasError = new AtomicBoolean(false);
         for (final I18nLocalEnum i18nLocalEnum : I18nLocalEnum.values()) {
+            //中文不需要再翻译
+            if (i18nLocalEnum == I18nLocalEnum.ZH_CN) {
+                continue;
+            }
             I18nResource i18nResource = res.get(i18nLocalEnum);
             File file = null;
             Map<String, String> prop = null;
@@ -119,6 +109,9 @@ public class TranslateUtils {
                 AtomicBoolean hasError = new AtomicBoolean(false);
                 try (RandomAccessFile raf = new RandomAccessFile(finalFile, "rw");) {
                     boolean flag = true;
+                    // 如果 size 没变说明文件还没保存，所以读取的还是之前的数据
+//                    System.out.println(allI18nKeys.size());
+//                    System.out.println(finalProp.size());
                     for (Map.Entry<String, String> entry : allI18nKeys.entrySet()) {
                         String key = entry.getKey(), val = entry.getValue();
                         if (finalProp.containsKey(key)) {
@@ -130,10 +123,12 @@ public class TranslateUtils {
                                 raf.seek(pos);
                                 int len = 0;
                                 while (--pos >= 0 && (len = raf.read()) != -1) {
+                                    //  System.out.println(len);
                                     if (len == '}') {
                                         //回到原来的位置
                                         raf.seek(pos - 1);
-                                        raf.write(",\n".getBytes());
+                                        //ascii 44(逗号) , 13(CR carriage return)回车 10(LF line feed)换行 125(大括号) }
+                                        raf.write(new byte[]{44, 13, 10});
                                         flag = false;
                                         break;
                                     }
@@ -143,20 +138,24 @@ public class TranslateUtils {
 
                             if (StringUtils.isNotBlank(val)) {
                                 //  String afterText = doTranslate(val, I18nLocalEnum.ZH_CN, i18nLocalEnum);
-                                String afterText = translate(I18nLocalEnum.ZH_CN.getLocalKey(), i18nLocalEnum.getLocalKey(), val);
+                                String afterText = translate(I18nLocalEnum.ZH_CN.getLocalKey(), i18nLocalEnum.getLocalKey(), val, 1);
                                 //  writer.write(stringToUnicode(afterText));
-                                String s = key + ": " + afterText + "\n";
+                                String s = key + ": " + afterText;
                                 raf.write(s.getBytes());
+                                raf.write(new byte[]{13, 10});
                                 LogUtils.info(val + " ====> " + afterText);
                             }
                         } catch (Exception e) {
+                            errMsg.set(e.getMessage());
                             LogUtils.error("翻译出错啦!", e);
                             hasError.set(true);
                         }
                     }
-                    raf.write("}".getBytes());
+                    if (!flag) {
+                        raf.write(new byte[]{125, 13, 10});
+                    }
                 } catch (Exception e) {
-                    LogUtils.error("", e);
+                    LogUtils.error(e.getMessage(), e);
                     hasError.set(true);
                 } finally {
                     countDownLatch.countDown();
@@ -168,7 +167,7 @@ public class TranslateUtils {
         }
         countDownLatch.await();
         if (allHasError.get()) {
-            throw new TranslateException("已经翻译完成，但翻译过程出现了错误。请检查网络或重新翻译一次！");
+            throw new TranslateException("" + errMsg);
         }
     }
 
@@ -213,72 +212,33 @@ public class TranslateUtils {
         return sb.toString();
     }
 
-
-    private static String doTranslate(String znText, I18nLocalEnum zhCn, I18nLocalEnum target) throws Exception {
-        /**
-         [[["Wo ist meine Sonnenbrille","where are my sunglasses",null,null,1]]\n,null,\"en\",null,null,[[\"where are my sunglasses\",null,[[\"Wo ist meine Sonnenbrille\",1000,true,false]\n,[\"wo sind meine Sonnenbrille\",0,true,false]\n]\n,[[0,23]\n]\n,\"where are my sunglasses\",0,0]\n]\n,1.0,[]\n,[[\"en\"]\n,null,[1.0]\n,[\"en\"]\n]\n]\n\"
-         */
-        String reRaw = "";
-        try {
-            if (!stopGoogleTranslate.get()) {//如果google服务被封了  使用代理
-                reRaw = googleTranslate(znText, zhCn, target);
-            } else {
-                reRaw = proxyTranslate(znText, zhCn, target);
-            }
-        } catch (Exception e) {// 多试一次
-            if (!stopGoogleTranslate.get()) {//如果google服务被封了  使用代理
-                reRaw = googleTranslate(znText, zhCn, target);
-            } else {
-                reRaw = proxyTranslate(znText, zhCn, target);
-            }
-        }
-        String[] strings = reRaw.split("\"");
-        if (strings.length > 0) {
-            return strings[1];
-        }
-        return "";
-    }
-//https://translate.googleapis.com/translate_a/single?
-// client=gtx&sl=zh_CN&tl=zh_TW&dt=t&q=
-// +%27%E6%B5%8B%E8%AF%95%E7%AC%AC%E4%B8%80%E6%AC%A1%E5%91%98%E5%B7%A5%E5%AF%BC%E5%85%A5%27%2C
-
-    //https://translate.google.cn/?sl=auto&tl=en&text=%E5%85%B1%E6%9C%89rrr%0A%0A&op=translate
-    private static String gooleTranslateApiCNUrl = "https://translate.google.cn/?" +
-            "sl=%s" +// 当前的语言
-            "&tl=%s" +// 目标语言
-            "&text=%s&op=translate";// 要翻译的文字
-    /**
-     * google 原生翻译接口
-     */
-    private static String gooleTranslateApiUrl = "https://translate.googleapis.com/translate_a/single?client=gtx" +
-            "&sl=%s" +// 当前的语言
-            "&tl=%s&dt=t" +// 目标语言
-            "&q=%s";// 要翻译的文字
-
-    private static String googleTranslate(String znText, I18nLocalEnum zhCn, I18nLocalEnum target) {
-        String reRaw;
-        try {
-            String url = String.format(gooleTranslateApiCNUrl, zhCn.getLocalKey(), target.getLocalKey(), URLEncoder.encode(znText, "utf-8"));
-            reRaw = HttpUtils.get(url);
-        } catch (Exception e) {
-            LogUtils.error("", e);
-            stopGoogleTranslate.set(true);
-            startTimer();
-            reRaw = proxyTranslate(znText, zhCn, target);
-        }
-        return reRaw;
-    }
-
-    public static String translate(String langFrom, String langTo, String word) throws Exception {
-        String url = "https://translate.googleapis.com/translate_a/single?" +
+    private static String translate(String langFrom, String langTo, String word, int type) throws Exception {
+        String s = type == 1 ? "https://translate.googleapis.com/translate_a/single?" +
                 "client=gtx&" +
                 "sl=" + langFrom +
                 "&tl=" + langTo +
-                "&dt=t&q=" + URLEncoder.encode(word, "UTF-8");
+                "&dt=t&q=" : "http://translate.google.cn/translate_a/single?" +
+                "client=gtx&" +
+                "sl=" + langFrom +
+                "&tl=" + langTo +
+                "&dt=t&q=";
+        String url = s + URLEncoder.encode(word, "UTF-8");
         URL obj = new URL(url);
         HttpURLConnection con = (HttpURLConnection) obj.openConnection();
         con.setRequestProperty("User-Agent", "Mozilla/5.0");
-        BufferedReader in = new BufferedReader(new InputStreamReader(con.getInputStream()));
+        BufferedReader in = null;
+        try {
+            in = new BufferedReader(new InputStreamReader(con.getInputStream()));
+        } catch (Exception e) {
+            LogUtils.error(e.getMessage(), e);
+            if (type == 1) {
+                NotifyUtils.waring("请求频繁，咕噜咕噜api拒绝了服务!" + e.getMessage(), project);
+                NotifyUtils.info("正在使用咕噜咕噜cn请求...", project);
+            } else {
+                throw new TranslateException("请求频繁，咕噜咕噜cn也拒绝了服务!" + e.getMessage());
+            }
+            return translate(langFrom, langTo, word, 2);
+        }
         String inputLine;
         StringBuilder response = new StringBuilder();
         while ((inputLine = in.readLine()) != null) {
@@ -305,28 +265,6 @@ public class TranslateUtils {
         return result.toString();
     }
 
-    /**
-     * 代理接口
-     * https://github.com/guyrotem/google-translate-server
-     */
-    private static String gooleTranslateProxyApiUrl = "https://google-translate-proxy.herokuapp.com/api/translate?query=%s&targetLang=%s&sourceLang=%s";
-
-    private static String proxyTranslate(String znText, I18nLocalEnum zhCn, I18nLocalEnum target) {
-        try {
-            String url = String.format(gooleTranslateProxyApiUrl, URLEncoder.encode(znText, "utf-8"), target.getLocalKey(), zhCn.getLocalKey());
-            String reRaw = HttpUtils.get(url);
-            Map data = JSONUtils.parseJson(reRaw, Map.class);
-            String originalResponse = ((String) data.get("originalResponse"));
-            if (originalResponse.startsWith("\"")) {
-                originalResponse = originalResponse.substring(1, originalResponse.length() - 1);
-            }
-            return originalResponse;
-        } catch (Exception e) {
-            LogUtils.error("", e);
-            throw new TranslateException("你操作太过频繁，导致googgle翻译拒绝了服务，请稍后再试!");
-        }
-    }
-
     private static I18nResource loadI18nResource(File file) throws Exception {
         I18nResource i18n = new I18nResource();
         BufferedReader br = new BufferedReader(new FileReader(file));
@@ -334,13 +272,12 @@ public class TranslateUtils {
         Map<String, String> props = new LinkedHashMap<>();
         while ((contentLine = br.readLine()) != null) {
             //读取每一行，并解析 xxx : 'Text to be translated',
-            System.out.println(contentLine);
+            //    System.out.println(contentLine);
             //将每一行追加到arr1
             if (contentLine.contains(":")) {
                 final String[] split = contentLine.split(":", 2);
                 props.put(split[0], split[1]);
             }
-
         }
         br.close();
         i18n.setProps(props);

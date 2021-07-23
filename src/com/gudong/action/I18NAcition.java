@@ -23,8 +23,9 @@ public class I18NAcition extends AnAction {
     @Override
     public void actionPerformed(AnActionEvent event) {
         // 保证单次单个任务
+        Project project = event.getProject();
         if (IS_TRANSLATEING.get()) {
-            NotifyUtils.info("正在翻译其他文件，请稍后。。。", event.getProject());
+            NotifyUtils.info("正在翻译其他文件，请稍后。。。",project);
             return;
         }
         IS_TRANSLATEING.set(true);
@@ -32,22 +33,23 @@ public class I18NAcition extends AnAction {
         final String path = file.getCanonicalPath();
 
         if (path.contains("cn") || path.contains("tw") || path.contains("us")) {
-            NotifyUtils.info("正在开始翻译文件，请稍后。。。", event.getProject());
-            final Project pj = event.getProject();
+            NotifyUtils.info("开始翻译文件，请稍后。。。", project);
+            final Project pj = project;
             new Thread(new Runnable() {
                 @Override
                 public void run() {
                     try {
+                        TranslateUtils.project = project;
                         TranslateUtils.translatePropFile(path);
-                        NotifyUtils.info("转换完成", pj);
+                        NotifyUtils.info("翻译完成", pj);
                     } catch (Exception e) {
                         LogUtils.error("", e);
-                        NotifyUtils.error("转换出错\r\n" + e.getLocalizedMessage(), pj);
+                        NotifyUtils.error("翻译出错\r\n" + e.getLocalizedMessage(), pj);
                     }
                 }
             }).start();
         } else {
-            NotifyUtils.waring("暂不支持非Properties文件", event.getProject());
+            NotifyUtils.waring("暂不支持非i18n文件", project);
         }
         IS_TRANSLATEING.set(false);
     }
